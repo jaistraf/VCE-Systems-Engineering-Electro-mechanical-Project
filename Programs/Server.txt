@@ -1,0 +1,86 @@
+import socket
+import sys
+sys.path.insert(1,'/home/pi/Documents')
+import serial
+import config as co
+from time import sleep
+s = socket.socket()
+print("socket made")
+port = 12345
+rocketIP = '192.168.100.222'
+s.bind(('', port))
+s.listen(1)
+
+co.ser = serial.Serial('/dev/ttyACM0', 9600, timeout=1)
+co.ser.flush()
+
+launchStage = 'inactive' # stages: inactive; warmup; flight; landed
+pressureS = 1000 # lets just say 1000 Pa
+
+c = ''
+addr = ['']
+    
+def endJourney():
+    print("Socket closing")
+    c.close()
+
+def tosend(send):
+    toprint = "telling em {}".format(send)
+    print(toprint)
+    data = send.encode()
+    c.sendall(data)
+
+launchStage = "flight"
+while True:
+    if (addr[0] == rocketIP):
+        if (launchStage == "inactive"):
+            passThis = True
+        elif (launchStage == "warmup"):
+            passThis = True
+        elif (launchStage == "ready"):
+            passThis = True
+        elif (launchStage == "flight"):
+            passThis = True
+        elif (launchStage == "glide"):
+            passThis = True
+        elif (launchStage == "land"):
+            passThis = True
+        if (launchStage == "inactive"):
+            #dont need to communicate while rocket inactive
+            lol = True
+        elif (launchStage == "warmup"):
+            #notify rocket to warmup
+            tosend("warmup")
+            ready = False
+            while (ready == False):
+                if (co.ser.in_waiting > 0):
+                    line = co.ser.readline().decode('utf-8').rstrip()
+                    print("Pressure: ")
+                    numb = float(line)
+                    print(numb)
+                    if (numb >= pressureS):
+                        ready = True
+                        print("Pressurised!")
+                        launchStage = "flight"
+        elif (launchStage == "flight"):
+            #notify rocket to send flight info
+            tosend("flight")
+            while (launchStage == "flight"):
+                data = c.recv(1024).decode()
+                print(data)
+                if (data == "I am flying!20"):
+                    launchStage = "landed"
+                    tosend("landed")
+        elif (launchStage == "landed"):
+            #notify rocket to stop sending data
+            lol = True
+            
+        elif (launchStage == "shutdown"):
+            tosend("shutdown")
+            c.close()
+    else:
+        c, addr = s.accept()
+        print("Connected to", addr)
+        string = "Thanks for connecting"
+        c.send(string.encode())
+    

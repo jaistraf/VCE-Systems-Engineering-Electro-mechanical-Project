@@ -1,0 +1,56 @@
+import socket
+import threading
+from time import sleep
+sleep(20)
+s = socket.socket()
+port = 12345
+s.connect(('192.168.100.221',port))
+
+launchStage = "inactive" #inactive, warmup, flight, landed, shutdown
+
+def thread_commands():
+    while True:
+        data = s.recv(1024).decode()
+        print(data)
+        if (data == "flight"):
+            launchStage = "flight"
+        elif (data == "landed"):
+            launchStage = "landed"
+        elif (data == "parachute"):
+            #release parachute
+            lol = True
+        elif (data == "shutdown"):
+            launchStage = "shutdown"
+            break
+
+x = threading.Thread(target=thread_commands)
+
+while True:
+    if (launchStage == "inactive"):
+        data = s.recv(1024).decode()
+        print(data)
+        if (data == "warmup"):
+            launchStage = "warmup"
+            x.start()
+        elif (data == "flight"):
+            print("flight!! woo!")
+            launchStage = "flight"
+            x.start()
+            
+    elif (launchStage == "warmup"):
+        #start up sensors
+        lol = True
+        
+    elif (launchStage == "flight"):
+        print("start!")
+        n = 0
+        while (launchStage == "flight"):
+            n = n + 1
+            data = "I am flying!{}".format(n)
+            s.send(data.encode())
+            sleep(0.3)
+    elif (launchStage == "landed"):
+        lol = True
+        
+    elif (launchStage == "shutdown"):
+        s.close()

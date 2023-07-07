@@ -1,0 +1,120 @@
+import io
+import socket
+import csv
+import json
+import os
+import sys
+from time import sleep
+from PIL import Image
+servi = socket.socket()
+servi.bind(('',12345))
+servi.listen(0)
+
+servd = socket.socket()
+servd.bind(('',12346))
+servd.listen(0)
+
+imageN = 0
+path = r"/home/pi/Documents/PiCam/Flights"
+trialNo = len([f.path for f in os.scandir(path) if f.is_dir()]) + 1
+pathD = '/home/pi/Documents/PiCam/Flights/Flight: '+str(trialNo)
+os.mkdir(pathD)
+flightData = open(pathD+"/flight_data.txt","a+")
+# can store line by line, format: time passed, sensorV
+# line one is like a header and includes: date, start time, user settings (PSI, camera)
+#recv = [command, {"time": .., "etc": ..}]
+data = {
+    "time": [0],
+    "sensorV": [0],
+}
+imgDbank = io.BytesIO()
+Landed = False
+
+connectioni = servi.accept()[0].makefile('rb')
+connectiond = servd.accept()[0]
+def land():
+    global Landed
+    Landed = True
+
+def image(recvJSON):
+    global imageN
+    imgdataSize = recvJSON[1]
+    charLength = recvJSON[2]
+    imgBytes = io.BytesIO()
+    tempBytes = io.BytesIO()
+    imgData = connectioni.read(imgdataSize)
+    recvChars = len(imgData)
+    
+    tempBytes.write(imgData)
+    tempBytes.seek(0)
+    
+    imgDbank.seek(0)
+    excessearlier = imgDbank.read()
+    lEarlier = len(excessearlier)
+    print(str(lEarlier)+" overflow from before")
+    overflowpos = charLength - lEarlier
+    imgDbank.seek(0)
+    print(excessearlier)
+    imgBytes.write(excessearlier)
+    imgDbank.truncate(0)
+    imgDbank.seek(0)
+    
+    tempBytes.seek(overflowpos)
+    imgDbank.write(tempBytes.read())
+    imgDbank.seek(0)
+    print(imgDbank.read())
+    tempBytes.seek(0)
+    tempBytes.truncate(overflowpos)
+    tempBytes.seek(0)
+    imgBytes.write(tempBytes.read())
+    
+    print(recvChars)
+    print(charLength)
+    print(len(imgDbank.read()))
+    
+    imgBytes.seek(0)
+    print(len(imgBytes.read()))
+    image = Image.open(imgBytes)
+    image.save(pathD+"/" + str(imageN) + ".jpeg", 'jpeg')
+    image.close()
+    imageN = imageN + 1
+
+def sensors(recvJSON):
+    newD = recvJSON[1]
+    data["time"].append(newD["time"])
+    data["sensorV"].append(newD["sensorV"])
+    flightData.write(str(newD["time"])+","+str(newD["sensorV"]))
+
+def computeRecv(recv):
+    computed = []
+    split = recv.rsplit("<>")
+    for x in split:
+        if x != "":
+            computed.append(x)
+    return computed
+    
+cmds = {"img": image,
+        "sensors": sensors
+        }
+
+try:
+    while Landed == False:
+        sleep(0.01)
+        recvRaw = connectiond.recv(1024)
+        recvDecd = recvRaw.decode('utf-8')
+        organisedD = computeRecv(recvDecd)
+        if (recvDecd == "land"):
+            land()
+        else:
+            for Ds in organisedD:
+                if (Ds == "land"):
+                    land()
+                else:
+                    recvJSON = json.loads(Ds)
+                    cmd = recvJSON[0]
+                    print(cmd)
+                    cmds[cmd](recvJSON)
+finally:
+    flightData.close()
+    connectioni.close()
+    connectiond.close()

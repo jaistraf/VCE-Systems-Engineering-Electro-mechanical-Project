@@ -1,0 +1,190 @@
+import tkinter as tk
+from tkinter import ttk
+from tkinter import font as tkfont
+import serial
+arduino = serial.Serial('/dev/ttyACM0', 9600)
+
+settings = [["Rocket Electronics",True],
+                    ["Camera",True],
+                    ["Parachute Deploy",True],
+                    ["WiFi Connection",True],
+                    ["Gantry",True],
+                    ["Rocket Weight(g)",800,1,1200,1],
+                    ["Launch PSI",135,1,150,1]]
+
+def gantryExtend():
+    arduino.write(b'extendG')
+
+def gantryRetract():
+    arduino.write(b'retractG')
+
+settingsTk=[]
+class GUI(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.main = tk.Frame(self,bg="white")
+        self.main.pack(side="top", fill="both", expand=True)
+        self.title_font = tkfont.Font(family='Helvetica', size=50, weight="bold")
+        self.sub_head = tkfont.Font(family='Helvetica', size=30)
+        self.text_font = tkfont.Font(family='Helvetica', size=20)
+        self.button_font = tkfont.Font(family='Helvetica', size=28)
+        self.buttonSML_font = tkfont.Font(family='Helvetica', size=24)
+        self.bkgTheme = "white"#"#f5f5f5"
+        self.frames = {}
+        for F in (WelcomePage, SettingsPage, StartupPage):
+            page_name = F.__name__
+            frame = F(parent=self.main, controller=self)
+            frame.scroll.place(x=0,y=0)
+            frame.update()
+            newpos = (464-frame.scroll.main.winfo_width())/2+20
+            frame.scroll.main.configure(padx=newpos)
+            self.frames[page_name] = frame
+        self.activeframe = self.frames["WelcomePage"]
+        self.activeframe.scroll.lift()
+        
+    def show_frame(self, page_name):
+        frame = self.frames[page_name]
+        self.activeframe.scroll.lower()
+        self.activeframe = frame
+        self.activeframe.scroll.lift()
+
+class WelcomePage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.scroll = ScrollableFrame(parent)
+        self.controller = controller
+        self.configure(bg="white")
+        title = tk.Label(self.scroll.main, text="Azure", font=controller.title_font, bg="white")
+        title.pack(side="top", fill="x", pady=0)
+        welc = tk.Label(self.scroll.main, text="Welcome to Flight Control!", wraplength=424, justify=tk.RIGHT, font=controller.text_font, bg="white")
+        welc.pack(side="top", fill="x")
+        prmpt = tk.Label(self.scroll.main, text="Please choose the settings for the launch.", wraplength=424, justify=tk.CENTER, font=controller.text_font, bg="white")
+        prmpt.pack(side="top", fill="x")
+        button = tk.Button(self.scroll.main, text="SETTINGS",font=controller.button_font,height=2,width=15,
+                            command=lambda: controller.show_frame("SettingsPage"))
+        button.pack()
+
+class SettingsPage(tk.Frame):
+    def modifyBool(self, a, value):
+        settings[a][1]=value
+        settingsTk[a].set(str(value))
+        
+    def modifyInt(self, a, value):
+        val = settingsTk[a].get()
+        if val+value<0:
+            settingsTk[a].set(0)
+        elif val+value>settings[a][3]:
+            settingsTk[a].set(settings[a][3])
+        else:
+            settingsTk[a].set(val+value)
+    def __init__(self, parent, controller):
+        def saveSettings():
+            settings[5][1]=settingsTk[5].get()
+            settings[6][1]=settingsTk[6].get()
+            for i in range(len(settings)):
+                print(settings[i][0]+" = "+str(settings[i][1]))
+            controller.show_frame("StartupPage")
+        tk.Frame.__init__(self, parent)
+        self.scroll = ScrollableFrame(parent)
+        self.configure(bg="white")
+        self.controller = controller
+        title = tk.Label(self.scroll.main, text="Settings", font=controller.title_font, bg="white")
+        title.pack(side="top", fill="x", pady=0)
+        tableP = tk.Canvas(self.scroll.main, width=424,bg=controller.bkgTheme,highlightthickness=0)
+        tableP.pack()
+        for i in range(len(settings)):
+            if isinstance(settings[i][1],bool):
+                pos = tk.Button(tableP, text="(On)",command=lambda i=i: self.modifyBool(i,True))
+                txt = tk.Label(tableP, text=settings[i][0], font=controller.text_font,bg=controller.bkgTheme)
+                fals = tk.Button(tableP, text="(Off)",command=lambda i=i: self.modifyBool(i,False))
+                settingsTk.append(tk.StringVar())
+                settingsTk[i].set(str(settings[i][1]))
+                value = tk.Label(tableP, textvariable=settingsTk[i],font=controller.text_font,bg=controller.bkgTheme)
+                pos.grid(row=i,column=3)
+                value.grid(row=i,column=2)
+                txt.grid(row=i,column=0)
+                fals.grid(row=i,column=1)              
+            else:
+                plus = tk.Button(tableP, text="(+)",command=lambda i=i: self.modifyInt(i,settings[i][2]))
+                txt = tk.Label(tableP, text=settings[i][0], font=controller.text_font,bg=controller.bkgTheme)
+                minus = tk.Button(tableP, text="(-)",command=lambda i=i: self.modifyInt(i,-settings[i][2]))
+                #value = tk.Label(tableP, text=settings[i][1],font=controller.text_font,bg=controller.bkgTheme)
+                value = tk.Scale(tableP, from_=0,to=settings[i][3],highlightcolor=controller.bkgTheme,bg=controller.bkgTheme,tickinterval=settings[i][3],orient=tk.HORIZONTAL,resolution=settings[i][4])
+                settingsTk.append(value)
+                plus.grid(row=i,column=3)
+                value.grid(row=i,column=2)
+                txt.grid(row=i,column=0)
+                minus.grid(row=i,column=1)  
+                              
+        button = tk.Button(self.scroll.main, text="OK",font=controller.button_font,height=2,width=15,
+                           command= saveSettings)
+        button.pack(pady=5)
+
+class StartupPage(tk.Frame):
+    def __init__(self, parent, controller):
+        tk.Frame.__init__(self, parent)
+        self.scroll = ScrollableFrame(parent)
+        self.controller = controller
+        self.configure(bg="white")
+        title = tk.Label(self.scroll.main, text="Preparation", font=controller.title_font, bg="white")
+        title.pack(side="top", fill="x", pady=0)
+        gantryF = tk.Frame(self.scroll.main,bg="white")
+        gantrySub = tk.Label(gantryF, text="Gantry Operation", font=controller.sub_head,bg="white")
+        gantryExtendBtn = tk.Button(gantryF, text="Extend",font=controller.buttonSML_font,height=2,width=7,
+                           command=gantryExtend)
+        gantryRetractBtn = tk.Button(gantryF, text="Retract",font=controller.buttonSML_font,height=2,width=7,
+                           command=gantryRetract)
+        gantryF.pack()
+        gantrySub.pack()
+        gantryExtendBtn.pack(side=tk.LEFT)
+        gantryRetractBtn.pack(side=tk.RIGHT)
+        compressorF = tk.Frame(self.scroll.main,bg="white")
+        compressorSub = tk.Label(compressorF, text="Compressor Operation", font=controller.sub_head,bg="white")
+        compressorStart = tk.Button(compressorF, text="Start",font=controller.buttonSML_font,height=2,width=7,
+                           command=lambda: sendCommand("compressorStart"))
+        compressorF.pack()
+        compressorSub.pack()
+        compressorStart.pack()
+        
+class ScrollableFrame(ttk.Frame):
+    def __init__(self, container, *args, **kwargs):
+        super().__init__(container, *args, **kwargs)
+        s = ttk.Style()
+        s.configure('Vertical.TScrollbar',
+            troughcolor='#f1f1f1',
+            background="#c1c1c1",
+            highlightthickness=0,
+            elementborderwidth=0,
+            borderwidth=0
+        )
+        s.map('Vertical.TScrollbar',
+            background = [('disabled', '#fafafa'),
+                          ('pressed', '!focus', '#787878'),
+                          ('active', '#a5a5a5')],
+            highlightcolor = [('focus', 'green'),
+                              ('!focus', 'red')],
+            relief = [('pressed', 'flat'),
+                      ('!pressed', 'flat')])
+        canvas = tk.Canvas(self, bg="white",highlightthickness=0,height=320,width=464)
+        scrollbar = ttk.Scrollbar(self,orient="vertical",command=canvas.yview)
+        self.main = tk.Frame(canvas, background="white",padx=20,pady=20,
+                             width=464)
+        self.main.bind(
+            "<Configure>",
+            lambda e: canvas.configure(
+                scrollregion=canvas.bbox("all")
+            )
+        )
+        canvas.create_window((0, 0), window=self.main, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left",fill="both")
+        scrollbar.pack(side="right", fill="y")        
+
+
+if __name__ == "__main__":
+    GUI = GUI()
+    GUI.fullScreenState = True
+    GUI.attributes("-fullscreen",True)
+    GUI.configure(bg="white")
+    GUI.title("Control Panel")
+    GUI.mainloop()
